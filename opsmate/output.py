@@ -75,11 +75,13 @@ def print_providers_table(providers: dict) -> None:
 def print_tools_table(tools: list) -> None:
     table = Table(box=box.SIMPLE, show_header=True, header_style="bold")
     table.add_column("Tool", style="cyan")
+    table.add_column("", width=2)  # dangerous indicator
     table.add_column("Description", style="white")
     table.add_column("Parameters", style="dim")
     for t in sorted(tools, key=lambda x: x.name):
         params = ", ".join(t.parameters.get("properties", {}).keys())
-        table.add_row(t.name, t.description[:60], params)
+        guard = "[yellow]⚠[/yellow]" if getattr(t, "dangerous", False) else ""
+        table.add_row(t.name, guard, t.description[:60], params)
     console.print(table)
 
 

@@ -14,9 +14,10 @@ class Tool:
     description: str
     parameters: dict
     func: Callable
+    dangerous: bool = False
 
 
-def tool(description: str, params: dict[str, str] | None = None):
+def tool(description: str, params: dict[str, str] | None = None, dangerous: bool = False):
     """Decorator that registers a function as an OpsMate tool.
 
     Usage:
@@ -46,6 +47,7 @@ def tool(description: str, params: dict[str, str] | None = None):
             description=description,
             parameters=schema,
             func=func,
+            dangerous=dangerous,
         )
         return func
 

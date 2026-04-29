@@ -184,6 +184,7 @@ def kubectl_node_status() -> str:
         "namespace": "Namespace",
         "container": "Container name (for multi-container pods)",
     },
+    dangerous=True,
 )
 def kubectl_exec(pod: str, command: str, namespace: str = "default", container: str = "") -> str:
     args = ["exec", pod, "-n", namespace]
@@ -201,6 +202,7 @@ def kubectl_exec(pod: str, command: str, namespace: str = "default", container: 
         "resource": "Resource type and name e.g. 'deployment/nginx' or 'statefulset/db'",
         "namespace": "Namespace",
     },
+    dangerous=True,
 )
 def kubectl_rollout_restart(resource: str, namespace: str = "default") -> str:
     return _run(["rollout", "restart", resource, "-n", namespace])
@@ -225,6 +227,7 @@ def kubectl_rollout_status(resource: str, namespace: str = "default", history: s
         "resource": "Resource type and name e.g. 'deployment/nginx'",
         "namespace": "Namespace",
     },
+    dangerous=True,
 )
 def kubectl_rollout_undo(resource: str, namespace: str = "default") -> str:
     return _run(["rollout", "undo", resource, "-n", namespace])
@@ -237,6 +240,7 @@ def kubectl_rollout_undo(resource: str, namespace: str = "default") -> str:
         "replicas": "Target replica count",
         "namespace": "Namespace",
     },
+    dangerous=True,
 )
 def kubectl_scale(resource: str, replicas: str, namespace: str = "default") -> str:
     return _run(["scale", resource, f"--replicas={replicas}", "-n", namespace])
@@ -250,6 +254,7 @@ def kubectl_scale(resource: str, replicas: str, namespace: str = "default") -> s
         "image": "New image e.g. 'nginx:1.27'",
         "namespace": "Namespace",
     },
+    dangerous=True,
 )
 def kubectl_set_image(resource: str, container: str, image: str, namespace: str = "default") -> str:
     return _run(["set", "image", resource, f"{container}={image}", "-n", namespace])
@@ -262,6 +267,7 @@ def kubectl_set_image(resource: str, container: str, image: str, namespace: str 
         "dry_run": "Set to 'true' to preview changes without applying (default true)",
         "namespace": "Namespace (overrides namespace in manifest if set)",
     },
+    dangerous=True,
 )
 def kubectl_apply(manifest_yaml: str, dry_run: str = "true", namespace: str = "") -> str:
     import tempfile, os
@@ -286,6 +292,7 @@ def kubectl_apply(manifest_yaml: str, dry_run: str = "true", namespace: str = ""
         "namespace": "Namespace",
         "force": "Set to 'true' for immediate deletion (--force --grace-period=0)",
     },
+    dangerous=True,
 )
 def kubectl_delete(resource: str, namespace: str = "default", force: str = "false") -> str:
     args = ["delete", resource, "-n", namespace]

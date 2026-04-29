@@ -11,6 +11,7 @@ _MAX_OUTPUT = 8_000
         "command": "Shell command to execute",
         "timeout": "Timeout in seconds (default 30)",
     },
+    dangerous=True,
 )
 def run_shell(command: str, timeout: str = "30") -> str:
     try:
