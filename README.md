@@ -1,118 +1,121 @@
-# OpsMate
+# Opsmate
 
-AI-powered Kubernetes operations assistant — debug issues, run health checks, and apply fixes from your terminal.
+Opsmate is an AI-powered operations assistant that turns routine Jira tickets
+into merged pull requests — automatically.
 
-## Features
+You describe what needs changing in a ticket ("bump lodash to 4.17.21 in
+payments-service"), and Opsmate extracts a structured intent, resolves the
+right tool, runs it in an isolated sandbox, and opens a PR for human review.
 
-- **K8s debugging** — automatically investigates pods, logs, events, and deployments
-- **Multi-provider** — works with Anthropic (Claude) and OpenAI (GPT-4o, o3)
-- **Extensible tools** — add your own tools by dropping a `.py` file in `~/.opsmate/tools/`
-- **Clean output** — only shows what matters; no noise
+---
 
-## Install
-
-```bash
-pip install -e .
-```
-
-## Setup
-
-Set your API key for whichever provider you want to use:
+## Quickstart
 
 ```bash
-export ANTHROPIC_API_KEY=sk-ant-...   # Anthropic Claude (default)
-export OPENAI_API_KEY=sk-...          # OpenAI GPT
+# 1. Set required environment variables
+export ANTHROPIC_API_KEY=sk-ant-...
+export JIRA_MCP_TOKEN=...
+export BITBUCKET_MCP_TOKEN=...
+export DATABASE_URL=postgres://...
+
+# 2. Build
+go build -o bin/opsmate ./cmd/cli
+
+# 3. Process a ticket
+./bin/opsmate process-ticket PAY-1042
 ```
 
-## Usage
+The agent will:
+1. Fetch the Jira ticket via MCP.
+2. Extract a structured intent (verb + parameters + target repo).
+3. Find or generate a tool for that intent.
+4. Execute the tool in a sandboxed Kubernetes Job.
+5. Open a pull request with the diff as its body.
+6. Transition the Jira ticket to `In Review`.
 
-```bash
-# Ask a free-form question — OpsMate uses kubectl tools to investigate
-opsmate ask "why is my pod crashing in the payments namespace?"
+---
 
-# Debug a specific resource
-opsmate debug pod/nginx-7d4b8c9f6-xxxx -n production
+## Architecture
 
-# Full cluster health check
-opsmate diagnose
-opsmate diagnose -n staging
+Full details: [docs/architecture.md](docs/architecture.md)
 
-# Interactive multi-turn session
-opsmate chat
+### Fast path (tool already exists)
 
-# Use a specific provider / model
-opsmate ask "show me failing pods" --provider openai --model gpt-4o
-opsmate ask "show me failing pods" --provider anthropic --model claude-opus-4-7
+```
+Jira → Intent Agent → Resolver → Executor → PR Raiser → Jira closed
 ```
 
-## Configuration
+The Intent Agent makes one LLM call to extract a verb + parameters.  The
+Resolver looks up the matching tool in the Registry.  The Executor runs the
+tool's script in an isolated k8s Job and captures the diff.  The PR Raiser
+opens a pull request.  End-to-end latency is typically 5–15 seconds.
 
-```bash
-# View current config
-opsmate config show
+### Slow path (no tool yet — tool generation)
 
-# Persist provider/model defaults
-opsmate config set provider anthropic
-opsmate config set model claude-opus-4-7
-
-# See all providers and models
-opsmate config providers
+```
+Resolver (miss) → Generator → tools-registry PR → human merge → Indexer → Registry
 ```
 
-## Providers & Models
+When no tool exists for the `(verb, repo)` combination, the Generator uses an
+LLM to produce a `manifest.yaml` + `script.py` and opens a PR to the
+`tools-registry` repository.  After a human approves and merges, the Indexer
+hashes and loads the tool into the database.  The original ticket is
+automatically retried on the fast path.
 
-| Provider  | Model                     | Notes                              |
-|-----------|---------------------------|------------------------------------|
-| anthropic | claude-opus-4-7           | Most capable, best for complex debugging |
-| anthropic | claude-sonnet-4-6         | Balanced speed & quality (default) |
-| anthropic | claude-haiku-4-5-20251001 | Fastest, lowest cost               |
-| openai    | o3                        | Best reasoning                     |
-| openai    | gpt-4o                    | Balanced                           |
-| openai    | gpt-4o-mini               | Fast & cheap                       |
+---
 
-## Adding Custom Tools
+## Key Concepts
 
-Drop a Python file in `~/.opsmate/tools/`:
+| Term | Meaning |
+|---|---|
+| **Intent** | Structured JSON extracted from a ticket: verb + parameters + target repo |
+| **Verb** | The action type, e.g. `update_dependency`, `update_image_tag` |
+| **Tool** | A `(verb, repo-pattern)` implementation: a manifest + a script |
+| **Sandbox** | Isolated k8s Job in `agent-sandbox` namespace (PSA restricted, no network) |
+| **Registry** | Postgres table of hashed, validated tools |
+| **Indexer** | Service that watches the tools-registry repo and loads new/updated tools |
 
-```python
-# ~/.opsmate/tools/my_tools.py
-# `tool` is injected automatically — no imports needed
+---
 
-@tool(
-    "Check disk usage on the local machine",
-    params={"path": "Path to check (default: /)"}
-)
-def disk_usage(path: str = "/") -> str:
-    import subprocess
-    r = subprocess.run(["df", "-h", path], capture_output=True, text=True)
-    return r.stdout
+## Repository Layout
+
+```
+cmd/
+  agent/        main entry point for the agent server
+  cli/          opsmate CLI (process-ticket, promote-tool, …)
+  indexer/      Indexer service
+deploy/
+  k8s/          Kubernetes manifests (namespace, RBAC)
+  docker/       Dockerfiles (agent + runtime images)
+docs/           Architecture, operating guide, threat model, verb authoring
+eval/
+  golden/       Golden test cases (intent + expected diff)
+  replay/       Go test runner for golden cases
+pkg/
+  config/       Configuration loading
+  mcp/          Jira and Bitbucket MCP clients
+  store/        Postgres access (intents, executions, llm_traces)
+  verbs/        Verb schema registry
+schemas/        intent.v1.schema.json
+tools-registry-seed/
+  verbs/        JSON Schemas for each verb
+  tools/        Hand-authored tool implementations
 ```
 
-Tools are picked up automatically on the next `opsmate` invocation. View registered tools:
+---
 
-```bash
-opsmate tools list
-opsmate tools add-example   # creates a starter template
-```
+## Documentation
 
-## Built-in K8s Tools
+- [Architecture](docs/architecture.md) — pipeline diagrams and cost profiles
+- [Adding a Verb](docs/adding-a-verb.md) — how to add a new verb and tool
+- [Operating](docs/operating.md) — alerts, traces, audit log, runbooks
+- [Threat Model](docs/threat-model.md) — security analysis
 
-| Tool | Purpose |
-|------|---------|
-| `kubectl_get` | List any resource type |
-| `kubectl_describe` | Full resource details |
-| `kubectl_logs` | Pod/container logs |
-| `kubectl_events` | Cluster events (sorted by time) |
-| `kubectl_top` | CPU/memory usage |
-| `kubectl_exec` | Run commands inside pods |
-| `kubectl_rollout_restart` | Rolling restart |
-| `kubectl_rollout_undo` | Roll back a deployment |
-| `kubectl_scale` | Change replica count |
-| `kubectl_set_image` | Update container image |
-| `kubectl_apply` | Apply YAML (dry-run by default) |
-| `kubectl_delete` | Delete a resource |
-| `kubectl_get_contexts` | List kubeconfig contexts |
-| `kubectl_use_context` | Switch context |
-| `kubectl_cluster_info` | Cluster endpoint info |
-| `kubectl_node_status` | Node health |
-| `run_shell` | Arbitrary shell command |
+---
+
+## Contributing
+
+1. Fork the repo and create a feature branch.
+2. Run `make test` to ensure all tests pass.
+3. Follow [Adding a Verb](docs/adding-a-verb.md) when introducing new verbs.
+4. Open a PR; the CI pipeline must be green before merge.

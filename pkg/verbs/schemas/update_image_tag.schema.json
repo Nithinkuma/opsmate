@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/nithinkuma/opsmate/tools-registry-seed/verbs/update_image_tag.schema.json",
+  "title": "update_image_tag",
+  "description": "Updates the container image tag for a specified image in a Kubernetes manifest, Helm values file, or Docker Compose file.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["image", "tag"],
+  "properties": {
+    "image": {
+      "type": "string",
+      "description": "The container image name (without tag) to update (e.g. 'nginx', 'gcr.io/my-project/my-service', 'quay.io/org/app')."
+    },
+    "tag": {
+      "type": "string",
+      "description": "The new image tag to apply (e.g. 'v1.2.3', 'sha256:abc123', 'latest')."
+    },
+    "file_path": {
+      "type": "string",
+      "description": "Optional path to the specific file where the image tag should be updated. If omitted, all relevant manifests in the repository will be scanned."
+    }
+  }
+}

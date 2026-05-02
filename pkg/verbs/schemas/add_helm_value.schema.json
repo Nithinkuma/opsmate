@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/nithinkuma/opsmate/tools-registry-seed/verbs/add_helm_value.schema.json",
+  "title": "add_helm_value",
+  "description": "Adds or updates a value in a Helm chart's values.yaml file at the specified key path.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["chart_path", "key", "value"],
+  "properties": {
+    "chart_path": {
+      "type": "string",
+      "description": "Path to the Helm chart directory or the specific values file to modify (e.g. 'charts/my-app', 'deploy/helm/values.yaml')."
+    },
+    "key": {
+      "type": "string",
+      "description": "Dot-separated key path within the values file where the value should be set (e.g. 'replicaCount', 'ingress.enabled', 'resources.limits.memory')."
+    },
+    "value": {
+      "type": "string",
+      "description": "The value to set at the specified key. Scalars are written directly; complex types should be serialized as a YAML string."
+    }
+  }
+}

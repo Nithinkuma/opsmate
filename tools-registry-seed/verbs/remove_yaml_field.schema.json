@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/nithinkuma/opsmate/tools-registry-seed/verbs/remove_yaml_field.schema.json",
+  "title": "remove_yaml_field",
+  "description": "Removes a field at a specified path from a YAML file, leaving the rest of the document intact.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["file_path", "field_path"],
+  "properties": {
+    "file_path": {
+      "type": "string",
+      "description": "Relative or absolute path to the YAML file to modify (e.g. 'config/app.yaml', 'k8s/deployment.yaml')."
+    },
+    "field_path": {
+      "type": "string",
+      "description": "Dot-separated path to the field to remove from the YAML document (e.g. 'spec.tolerations', 'metadata.annotations.deprecated-key')."
+    }
+  }
+}

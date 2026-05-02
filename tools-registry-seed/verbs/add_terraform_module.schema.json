@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/nithinkuma/opsmate/tools-registry-seed/verbs/add_terraform_module.schema.json",
+  "title": "add_terraform_module",
+  "description": "Adds a new Terraform module block to the appropriate Terraform configuration file.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["module_name", "source", "version"],
+  "properties": {
+    "module_name": {
+      "type": "string",
+      "description": "The local name used for the module block in Terraform configuration (e.g. 'vpc', 'rds_cluster')."
+    },
+    "source": {
+      "type": "string",
+      "description": "The module source address, which can be a Terraform Registry path, a Git URL, or a local path (e.g. 'terraform-aws-modules/vpc/aws', 'git::https://example.com/modules/vpc')."
+    },
+    "version": {
+      "type": "string",
+      "description": "The version constraint for the module (e.g. '3.14.0', '~> 4.0', '>= 2.0, < 3.0')."
+    },
+    "inputs": {
+      "type": "object",
+      "description": "An optional map of input variable names to their values to pass into the module block.",
+      "additionalProperties": true
+    }
+  }
+}

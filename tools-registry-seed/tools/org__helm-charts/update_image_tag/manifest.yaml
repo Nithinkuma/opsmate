@@ -1,0 +1,28 @@
+id: org__helm-charts.update_image_tag
+verb: update_image_tag
+schema_version: 1
+
+repo:
+  pattern: "org/helm-charts"
+  default_branch: main
+
+runtime:
+  language: python
+  entrypoint: ./script.py
+  interpreter: python3.11
+  dependencies:
+    - "ruamel.yaml==0.18.6"
+
+preconditions:
+  - "file_exists: values.yaml"
+
+postconditions:
+  - "valid_yaml: values.yaml"
+
+provenance:
+  generated_by: hand
+  generated_at: "2026-01-01T00:00:00Z"
+
+hash:
+  manifest: "sha256:placeholder"
+  script: "sha256:placeholder"

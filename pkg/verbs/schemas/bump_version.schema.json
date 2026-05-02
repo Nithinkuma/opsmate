@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/nithinkuma/opsmate/tools-registry-seed/verbs/bump_version.schema.json",
+  "title": "bump_version",
+  "description": "Bumps the project or component version string in version files such as package.json, pyproject.toml, or VERSION.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version"],
+  "properties": {
+    "version": {
+      "type": "string",
+      "description": "The new version string to set (e.g. '1.4.0', '2.0.0-rc.1'). Must be a valid semantic version."
+    },
+    "pre_release": {
+      "type": "string",
+      "description": "An optional pre-release identifier appended to the version (e.g. 'alpha', 'beta.1', 'rc.2')."
+    }
+  }
+}

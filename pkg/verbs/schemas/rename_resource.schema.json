@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/nithinkuma/opsmate/tools-registry-seed/verbs/rename_resource.schema.json",
+  "title": "rename_resource",
+  "description": "Renames an infrastructure or application resource (e.g. a Kubernetes object, Terraform resource, or Helm release) from an old name to a new name.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["resource_type", "old_name", "new_name"],
+  "properties": {
+    "resource_type": {
+      "type": "string",
+      "description": "The type of resource to rename (e.g. 'Deployment', 'Service', 'aws_s3_bucket', 'helm_release')."
+    },
+    "old_name": {
+      "type": "string",
+      "description": "The current name of the resource before the rename operation."
+    },
+    "new_name": {
+      "type": "string",
+      "description": "The desired new name for the resource after the rename operation."
+    }
+  }
+}

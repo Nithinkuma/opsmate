@@ -1,0 +1,29 @@
+id: org__payments-service.update_dependency
+verb: update_dependency
+schema_version: 1
+
+repo:
+  pattern: "org/payments-service"
+  default_branch: main
+
+runtime:
+  language: python
+  entrypoint: ./script.py
+  interpreter: python3.11
+  dependencies:
+    - "packaging==23.2"
+
+preconditions:
+  - "file_exists: package.json"
+  - "file_exists: package-lock.json"
+
+postconditions:
+  - "valid_json: package.json"
+
+provenance:
+  generated_by: hand
+  generated_at: "2026-01-01T00:00:00Z"
+
+hash:
+  manifest: "sha256:placeholder"
+  script: "sha256:placeholder"

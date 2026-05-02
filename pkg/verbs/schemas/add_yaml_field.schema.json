@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/nithinkuma/opsmate/tools-registry-seed/verbs/add_yaml_field.schema.json",
+  "title": "add_yaml_field",
+  "description": "Adds or overwrites a field at a specified path within a YAML file.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["file_path", "field_path", "value"],
+  "properties": {
+    "file_path": {
+      "type": "string",
+      "description": "Relative or absolute path to the YAML file to modify (e.g. 'config/app.yaml', 'k8s/deployment.yaml')."
+    },
+    "field_path": {
+      "type": "string",
+      "description": "Dot-separated path to the field within the YAML document (e.g. 'spec.replicas', 'metadata.labels.app')."
+    },
+    "value": {
+      "type": "string",
+      "description": "The value to set at the specified field path. Complex values should be serialized as a YAML or JSON string."
+    }
+  }
+}

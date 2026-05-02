@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/nithinkuma/opsmate/tools-registry-seed/verbs/add_env_var.schema.json",
+  "title": "add_env_var",
+  "description": "Adds or updates an environment variable in a configuration file such as a .env file, a Kubernetes ConfigMap, or a CI/CD environment definition.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["var_name", "value"],
+  "properties": {
+    "var_name": {
+      "type": "string",
+      "description": "The name of the environment variable to add or update (e.g. 'DATABASE_URL', 'LOG_LEVEL', 'FEATURE_X_ENABLED'). Should follow uppercase snake_case convention."
+    },
+    "value": {
+      "type": "string",
+      "description": "The value to assign to the environment variable."
+    },
+    "target_file": {
+      "type": "string",
+      "description": "Optional path to the file where the environment variable should be written (e.g. '.env', '.env.production', 'k8s/configmap.yaml'). Defaults to '.env' in the repository root if omitted."
+    }
+  }
+}

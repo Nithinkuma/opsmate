@@ -1,0 +1,46 @@
+llm:
+  primary:
+    provider: anthropic
+    model: claude-opus-4-7
+  fast:
+    provider: anthropic
+    model: claude-haiku-4-5-20251001
+
+mcp:
+  bitbucket:
+    url: https://bitbucket.org/mcp
+    auth: ${BITBUCKET_MCP_TOKEN}
+  atlassian:
+    url: https://yourorg.atlassian.net/mcp
+    auth: ${ATLASSIAN_MCP_TOKEN}
+
+postgres:
+  dsn: ${DATABASE_URL}
+
+sandbox:
+  kind: local                    # "k8s_job" in production; "local" for dev
+  namespace: agent-sandbox
+  runtime_images:
+    python: ghcr.io/yourorg/agent-runtime-python:1.0
+    bash:   ghcr.io/yourorg/agent-runtime-bash:1.0
+    go:     ghcr.io/yourorg/agent-runtime-go:1.0
+  default_timeout: 300s
+  cpu_limit: 500m
+  memory_limit: 512Mi
+
+tools_registry:
+  git_url: git@bitbucket.org:yourorg/tools-registry.git
+  branch: main
+  poll_interval: 60s
+  webhook_secret: ${REGISTRY_WEBHOOK_SECRET}
+  seed_path: ./tools-registry-seed    # used when git_url is empty (dev)
+
+agent:
+  generator_max_steps: 15
+  generator_max_parallel_tools: 4
+  intent_temperature: 0.0
+  generator_temperature: 0.2
+
+observability:
+  otlp_endpoint: ${OTLP_ENDPOINT}
+  log_level: info

@@ -1,0 +1,36 @@
+{
+  "intent": {
+    "intent_id": "01HZ0000000000000000000001",
+    "schema_version": "1",
+    "source": {
+      "system": "jira",
+      "ticket_id": "PAY-1042",
+      "url": "https://jira.example.com/browse/PAY-1042",
+      "reporter": "alice@example.com",
+      "fetched_at": "2026-01-15T09:00:00Z",
+      "repo_resolution_method": "explicit"
+    },
+    "action": {
+      "verb": "update_dependency",
+      "target": {
+        "repo": "org/payments-service",
+        "branch": "main"
+      },
+      "parameters": {
+        "package": "lodash",
+        "to_version": "4.17.21"
+      }
+    },
+    "context": {
+      "description_raw": "Bump lodash to 4.17.21 to address CVE-2021-23337.",
+      "linked_tickets": [],
+      "priority": "high"
+    },
+    "policy": {
+      "auto_merge": false,
+      "require_human_approval": true,
+      "approvers": ["alice@example.com"]
+    }
+  },
+  "expected_diff": "--- a/package.json\n+++ b/package.json\n@@ -4,7 +4,7 @@\n   \"version\": \"1.0.0\",\n   \"description\": \"Payments service\",\n   \"dependencies\": {\n-    \"lodash\": \"^4.17.20\",\n+    \"lodash\": \"^4.17.21\",\n     \"express\": \"^4.18.2\"\n   }\n }\n"
+}

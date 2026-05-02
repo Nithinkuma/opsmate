@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/nithinkuma/opsmate/tools-registry-seed/verbs/enable_feature_flag.schema.json",
+  "title": "enable_feature_flag",
+  "description": "Enables a named feature flag in the relevant configuration file or feature-flag management system.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["flag_name"],
+  "properties": {
+    "flag_name": {
+      "type": "string",
+      "description": "The identifier of the feature flag to enable (e.g. 'dark_mode', 'new_checkout_flow')."
+    },
+    "target": {
+      "type": "string",
+      "description": "An optional scope or audience for the flag (e.g. an environment name like 'production', a user segment like 'beta_users', or a service name)."
+    }
+  }
+}

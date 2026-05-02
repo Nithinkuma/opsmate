@@ -1,0 +1,39 @@
+---
+# ServiceAccount used by the opsmate agent process.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: opsmate-agent
+  namespace: opsmate-system
+---
+# Role in agent-sandbox: allows the agent to create and observe sandbox Jobs/Pods.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: opsmate-agent-sandbox
+  namespace: agent-sandbox
+rules:
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["create", "get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["create", "get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get"]
+---
+# Bind the ServiceAccount to the Role inside agent-sandbox.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: opsmate-agent-sandbox
+  namespace: agent-sandbox
+subjects:
+  - kind: ServiceAccount
+    name: opsmate-agent
+    namespace: opsmate-system
+roleRef:
+  kind: Role
+  name: opsmate-agent-sandbox
+  apiGroup: rbac.authorization.k8s.io

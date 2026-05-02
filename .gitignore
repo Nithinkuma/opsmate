@@ -1,7 +1,66 @@
-__pycache__/
-*.py[cod]
-*.egg-info/
-.env
+# Compiled binaries and build output
+bin/
 dist/
-build/
-.venv/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with 'go test -c'
+*.test
+
+# Output of 'go tool cover'
+*.out
+coverage.html
+
+# Go workspace file (only go.work.sum is ignored; go.work itself may be committed)
+go.work.sum
+
+# go.sum is tracked — do not ignore it
+# go.sum
+
+# Dependency vendor directory (if not vendoring)
+vendor/
+
+# Environment / secrets
+.env
+.env.*
+*.secret
+secrets.yaml
+credentials.json
+
+# Editor and IDE artefacts
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Local config overrides
+config.local.yaml
+config.override.yaml
+
+# Docker build context artefacts
+*.tar
+
+# Kubernetes generated / applied manifests
+deploy/k8s/generated/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.bak
+*.orig
+
+# Profiling output
+*.prof
+*.pprof
+
+# SQLite (used in local dev)
+*.db
+*.sqlite
+*.sqlite3

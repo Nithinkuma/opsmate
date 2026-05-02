@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/nithinkuma/opsmate/tools-registry-seed/verbs/update_ci_config.schema.json",
+  "title": "update_ci_config",
+  "description": "Applies structured changes to a CI/CD pipeline configuration file such as a GitHub Actions workflow, CircleCI config, or Jenkinsfile.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["pipeline_file", "changes"],
+  "properties": {
+    "pipeline_file": {
+      "type": "string",
+      "description": "Path to the CI/CD pipeline configuration file to modify (e.g. '.github/workflows/ci.yml', '.circleci/config.yml')."
+    },
+    "changes": {
+      "type": "object",
+      "description": "A map of configuration keys or dot-separated paths to their new values representing the changes to apply to the pipeline file.",
+      "additionalProperties": true,
+      "minProperties": 1
+    }
+  }
+}

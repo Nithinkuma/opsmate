@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/nithinkuma/opsmate/tools-registry-seed/verbs/update_terraform_var.schema.json",
+  "title": "update_terraform_var",
+  "description": "Updates the value of an existing Terraform variable in a tfvars file or variable definition file.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["var_name", "value"],
+  "properties": {
+    "var_name": {
+      "type": "string",
+      "description": "The name of the Terraform variable to update (e.g. 'instance_type', 'region', 'db_password')."
+    },
+    "value": {
+      "type": "string",
+      "description": "The new value to assign to the Terraform variable. Complex types (lists, maps) should be expressed as HCL-compatible strings."
+    },
+    "file_path": {
+      "type": "string",
+      "description": "Optional path to the specific tfvars or .tf file containing the variable assignment. Defaults to the root terraform.tfvars if omitted."
+    }
+  }
+}

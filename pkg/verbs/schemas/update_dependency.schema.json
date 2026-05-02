@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/nithinkuma/opsmate/tools-registry-seed/verbs/update_dependency.schema.json",
+  "title": "update_dependency",
+  "description": "Updates a package dependency to a specified version in the project's dependency manifest.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["package", "to_version"],
+  "properties": {
+    "package": {
+      "type": "string",
+      "description": "The name of the package or dependency to update (e.g. 'requests', '@org/pkg')."
+    },
+    "to_version": {
+      "type": "string",
+      "description": "The target version string to update the dependency to (e.g. '2.28.0', '^4.0.0')."
+    },
+    "from_version": {
+      "type": "string",
+      "description": "The current version string of the dependency before the update. Used for validation and changelog generation."
+    }
+  }
+}

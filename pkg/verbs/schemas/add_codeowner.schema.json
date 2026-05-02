@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/nithinkuma/opsmate/tools-registry-seed/verbs/add_codeowner.schema.json",
+  "title": "add_codeowner",
+  "description": "Appends a new entry to the CODEOWNERS file, associating a file path pattern with one or more owner handles.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["pattern", "owners"],
+  "properties": {
+    "pattern": {
+      "type": "string",
+      "description": "The file path glob pattern for which ownership is being defined, following CODEOWNERS syntax (e.g. '*.go', 'src/auth/', 'docs/**')."
+    },
+    "owners": {
+      "type": "array",
+      "description": "A list of one or more GitHub user handles or team slugs to assign as owners for the pattern (e.g. ['@alice', '@org/backend-team']).",
+      "items": {
+        "type": "string",
+        "description": "A GitHub user handle (e.g. '@alice') or team slug (e.g. '@org/platform-team') to assign as a codeowner."
+      },
+      "minItems": 1
+    }
+  }
+}

@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/nithinkuma/opsmate/schemas/intent.v1.schema.json",
+  "title": "Intent",
+  "description": "Structured intent extracted from a Jira ticket",
+  "type": "object",
+  "required": ["intent_id", "schema_version", "source", "action", "context", "policy"],
+  "additionalProperties": false,
+  "properties": {
+    "intent_id": {
+      "type": "string",
+      "description": "ULID — unique per intent extraction"
+    },
+    "schema_version": {
+      "type": "string",
+      "enum": ["1"]
+    },
+    "source": {
+      "type": "object",
+      "required": ["system", "ticket_id", "url", "reporter", "fetched_at"],
+      "additionalProperties": false,
+      "properties": {
+        "system":    { "type": "string", "enum": ["jira"] },
+        "ticket_id": { "type": "string" },
+        "url":       { "type": "string", "format": "uri" },
+        "reporter":  { "type": "string" },
+        "fetched_at": { "type": "string", "format": "date-time" },
+        "repo_resolution_method": {
+          "type": "string",
+          "enum": ["explicit", "component_map", "llm"],
+          "description": "Auditability: how the target repo was resolved"
+        }
+      }
+    },
+    "action": {
+      "type": "object",
+      "required": ["verb", "target", "parameters"],
+      "additionalProperties": false,
+      "properties": {
+        "verb": {
+          "type": "string",
+          "enum": [
+            "update_dependency", "bump_version", "add_yaml_field",
+            "remove_yaml_field", "rename_resource", "enable_feature_flag",
+            "disable_feature_flag", "add_terraform_module", "update_terraform_var",
+            "add_helm_value", "rotate_secret_ref", "update_image_tag",
+            "add_codeowner", "update_ci_config", "add_env_var"
+          ]
+        },
+        "target": {
+          "type": "object",
+          "required": ["repo", "branch"],
+          "additionalProperties": false,
+          "properties": {
+            "repo":   { "type": "string", "minLength": 1 },
+            "branch": { "type": "string" },
+            "scope":  { "type": "string" }
+          }
+        },
+        "parameters": {
+          "type": "object",
+          "description": "Verb-specific parameters; validated against the verb schema"
+        }
+      }
+    },
+    "context": {
+      "type": "object",
+      "required": ["description_raw"],
+      "additionalProperties": false,
+      "properties": {
+        "description_raw": { "type": "string" },
+        "linked_tickets":  { "type": "array", "items": { "type": "string" } },
+        "priority":        { "type": "string" }
+      }
+    },
+    "policy": {
+      "type": "object",
+      "required": ["auto_merge", "require_human_approval"],
+      "additionalProperties": false,
+      "properties": {
+        "auto_merge":            { "type": "boolean" },
+        "require_human_approval": { "type": "boolean" },
+        "approvers": { "type": "array", "items": { "type": "string" } }
+      }
+    }
+  }
+}
