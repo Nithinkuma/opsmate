@@ -25,10 +25,12 @@ var generatorSystemPrompt string
 
 // GeneratorConfig holds tuning parameters for the ReAct loop.
 type GeneratorConfig struct {
-	MaxSteps        int
-	MaxParallelTools int
-	Temperature     float64
-	Model           string
+	MaxSteps             int
+	MaxParallelTools     int
+	Temperature          float64
+	Model                string
+	ToolsRegistryRepo    string // Bitbucket "workspace/repo-slug" for the tools-registry
+	ToolsRegistryBranch  string // default branch of tools-registry (usually "main")
 }
 
 // ToolPR is the output of a successful generator run.
@@ -201,10 +203,15 @@ func (g *Generator) Generate(ctx context.Context, i *intent.Intent) (*ToolPR, er
 	}
 }
 
-// handleEmitTool validates the emit_tool call and returns (resultMsg, done, err).
+// handleEmitTool validates the emit_tool call, pushes the tool to the
+// tools-registry repo, opens a PR, and returns (resultMsg, done, err).
 func (g *Generator) handleEmitTool(ctx context.Context, call llm.ToolCall, guard *safeguards.Guard, i *intent.Intent) (string, bool, error) {
 	manifestYAML := strInput(call.Input, "manifest_yaml")
 	scriptB64 := strInput(call.Input, "script_b64")
+	language := strInput(call.Input, "language")
+	if language == "" {
+		language = "python"
+	}
 
 	if manifestYAML == "" || scriptB64 == "" {
 		msg := "emit_tool: manifest_yaml and script_b64 are required"
@@ -222,7 +229,6 @@ func (g *Generator) handleEmitTool(ctx context.Context, call llm.ToolCall, guard
 		}
 		return msg, false, nil
 	}
-	_ = scriptBytes // will be written to PR
 
 	guard.RecordSuccess()
 	g.log.InfoContext(ctx, "emit_tool accepted",
@@ -230,7 +236,92 @@ func (g *Generator) handleEmitTool(ctx context.Context, call llm.ToolCall, guard
 		"script_bytes", len(scriptBytes),
 		"verb", i.Action.Verb,
 	)
-	return "emit_tool: accepted", true, nil
+
+	// Push to tools-registry and open a PR if configured.
+	if g.cfg.ToolsRegistryRepo != "" && g.bitbucket != nil {
+		if prURL, pushErr := g.pushToolPR(ctx, i, manifestYAML, string(scriptBytes), language); pushErr != nil {
+			g.log.WarnContext(ctx, "tools-registry PR failed — tool accepted but not persisted",
+				"error", pushErr)
+		} else {
+			g.log.InfoContext(ctx, "tools-registry PR opened", "pr_url", prURL)
+			return fmt.Sprintf("emit_tool: accepted — PR opened at %s", prURL), true, nil
+		}
+	}
+
+	return "emit_tool: accepted (no tools-registry configured)", true, nil
+}
+
+// pushToolPR pushes the manifest and script to a new branch in the
+// tools-registry repository and opens a pull-request for human review.
+func (g *Generator) pushToolPR(ctx context.Context, i *intent.Intent, manifestYAML, scriptContent, language string) (string, error) {
+	toolDir := fmt.Sprintf("tools/%s/%s", normaliseRepoPath(i.Action.Target.Repo), i.Action.Verb)
+	ext := scriptExt(language)
+	branch := fmt.Sprintf("automation/new-tool/%s/%s", i.Action.Verb, i.Source.TicketID)
+
+	targetBranch := g.cfg.ToolsRegistryBranch
+	if targetBranch == "" {
+		targetBranch = "main"
+	}
+
+	files := map[string]string{
+		toolDir + "/manifest.yaml":  manifestYAML,
+		toolDir + "/script." + ext: scriptContent,
+	}
+
+	if err := g.bitbucket.PushBranch(ctx, g.cfg.ToolsRegistryRepo, branch,
+		fmt.Sprintf("feat: add %s tool for %s [%s]", i.Action.Verb, i.Action.Target.Repo, i.Source.TicketID),
+		files,
+	); err != nil {
+		return "", fmt.Errorf("push branch: %w", err)
+	}
+
+	pr, err := g.bitbucket.CreatePR(ctx, mcp.CreatePRRequest{
+		Repo:         g.cfg.ToolsRegistryRepo,
+		Title:        fmt.Sprintf("[%s] New tool: %s for %s", i.Source.TicketID, i.Action.Verb, i.Action.Target.Repo),
+		Description:  toolPRBody(i),
+		SourceBranch: branch,
+		TargetBranch: targetBranch,
+	})
+	if err != nil {
+		return "", fmt.Errorf("create PR: %w", err)
+	}
+	return pr.URL, nil
+}
+
+func toolPRBody(i *intent.Intent) string {
+	return fmt.Sprintf(`## New Automation Tool
+
+**Jira**: [%s](%s)
+**Verb**: %s
+**Target repo**: %s
+
+This tool was generated automatically by OpsMate's slow-path generator.
+Review the manifest and script carefully before merging.
+
+Once merged, the indexer will pick up the new tool and future tickets
+triggering the same (%s, %s) pair will use it automatically.`,
+		i.Source.TicketID, i.Source.URL,
+		i.Action.Verb,
+		i.Action.Target.Repo,
+		i.Action.Verb, i.Action.Target.Repo,
+	)
+}
+
+func normaliseRepoPath(repo string) string {
+	return strings.ReplaceAll(repo, "/", "__")
+}
+
+func scriptExt(language string) string {
+	switch language {
+	case "python":
+		return "py"
+	case "bash":
+		return "sh"
+	case "go":
+		return "go"
+	default:
+		return "sh"
+	}
 }
 
 // executeParallel runs up to MaxParallelTools tool calls concurrently.
