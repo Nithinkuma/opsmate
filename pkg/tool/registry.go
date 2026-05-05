@@ -141,6 +141,17 @@ func (r *Registry) SetPolicyState(toolID string, state policy.State) error {
 	return fmt.Errorf("registry: tool %q not found", toolID)
 }
 
+// All returns every registered entry.
+func (r *Registry) All() []*Entry {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := make([]*Entry, 0, len(r.entries))
+	for _, e := range r.entries {
+		out = append(out, e)
+	}
+	return out
+}
+
 func entryKey(repo, verb string) string {
 	return normalizeRepo(repo) + "::" + verb
 }

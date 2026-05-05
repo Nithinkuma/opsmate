@@ -59,6 +59,25 @@ func (db *DB) UpdateExecution(ctx context.Context, e *Execution) error {
 	return err
 }
 
+// GetExecution fetches a single execution row by ID.
+func (db *DB) GetExecution(ctx context.Context, id string) (*Execution, error) {
+	row := db.Pool.QueryRow(ctx, `
+		SELECT id, intent_id, tool_id, manifest_hash, status, sandbox_kind,
+		       pod_name, exit_code, diff_output, pr_url, error_message,
+		       started_at, finished_at, created_at
+		FROM executions WHERE id=$1`, id)
+	e := &Execution{}
+	err := row.Scan(
+		&e.ID, &e.IntentID, &e.ToolID, &e.ManifestHash, &e.Status, &e.SandboxKind,
+		&e.PodName, &e.ExitCode, &e.DiffOutput, &e.PRURL, &e.ErrorMessage,
+		&e.StartedAt, &e.FinishedAt, &e.CreatedAt,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("store: execution %q not found: %w", id, err)
+	}
+	return e, nil
+}
+
 // WriteAuditLog appends one append-only audit entry to tool_runs.
 func (db *DB) WriteAuditLog(ctx context.Context,
 	executionID, toolID, manifestHash, actor, result, targetRepo, prURL, intentID string,
