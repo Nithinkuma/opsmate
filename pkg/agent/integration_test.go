@@ -32,6 +32,12 @@ func (f *fakeRunner) Run(_ context.Context, s sandbox.Spec) (sandbox.Result, err
 	return sandbox.Result{ExitCode: 0, Stdout: f.diff, FinishedAt: now}, nil
 }
 
+// realLocalRunner returns a sandbox.LocalRunner for tests that need actual execution.
+func realLocalRunner(t *testing.T) *sandbox.LocalRunner {
+	t.Helper()
+	return sandbox.NewLocalRunner(slog.Default())
+}
+
 // fakeAtlassian satisfies intent_agent's atlassian calls without MCP.
 // We exercise the Resolver and Executor directly in this test.
 

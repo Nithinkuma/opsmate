@@ -23,6 +23,11 @@ import (
 //go:embed prompts/generator.system.md
 var generatorSystemPrompt string
 
+// minGoldenTests is the minimum number of golden test cases the LLM must
+// provide before emit_tool is accepted. Enforced server-side so the model
+// cannot skip testing even if it tries.
+const minGoldenTests = 1
+
 // GeneratorConfig holds tuning parameters for the ReAct loop.
 type GeneratorConfig struct {
 	MaxSteps             int
@@ -203,9 +208,23 @@ func (g *Generator) Generate(ctx context.Context, i *intent.Intent) (*ToolPR, er
 	}
 }
 
-// handleEmitTool validates the emit_tool call, pushes the tool to the
-// tools-registry repo, opens a PR, and returns (resultMsg, done, err).
+// handleEmitTool validates the emit_tool call end-to-end before accepting it:
+//  1. Presence check — manifest_yaml and script_b64 must be non-empty.
+//  2. Base64 decode — script must be valid base64.
+//  3. Manifest parse — YAML must parse and pass field validation.
+//  4. Golden tests required — at least minGoldenTests cases must be provided.
+//  5. Golden tests pass — every case is executed server-side in the sandbox.
+//
+// Only after all five gates pass is the tool pushed to the tools-registry and a
+// PR opened. Any failure records a guard strike so the loop can self-correct.
 func (g *Generator) handleEmitTool(ctx context.Context, call llm.ToolCall, guard *safeguards.Guard, i *intent.Intent) (string, bool, error) {
+	fail := func(msg string) (string, bool, error) {
+		if err := guard.RecordFailure(); err != nil {
+			return msg, false, err
+		}
+		return msg, false, nil
+	}
+
 	manifestYAML := strInput(call.Input, "manifest_yaml")
 	scriptB64 := strInput(call.Input, "script_b64")
 	language := strInput(call.Input, "language")
@@ -213,33 +232,61 @@ func (g *Generator) handleEmitTool(ctx context.Context, call llm.ToolCall, guard
 		language = "python"
 	}
 
+	// Gate 1: presence.
 	if manifestYAML == "" || scriptB64 == "" {
-		msg := "emit_tool: manifest_yaml and script_b64 are required"
-		if err := guard.RecordFailure(); err != nil {
-			return msg, false, err
-		}
-		return msg, false, nil
+		return fail("emit_tool: manifest_yaml and script_b64 are required")
 	}
 
+	// Gate 2: base64.
 	scriptBytes, err := base64.StdEncoding.DecodeString(scriptB64)
 	if err != nil {
-		msg := fmt.Sprintf("emit_tool: invalid base64 script: %v", err)
-		if err := guard.RecordFailure(); err != nil {
-			return msg, false, err
-		}
-		return msg, false, nil
+		return fail(fmt.Sprintf("emit_tool: invalid base64 script: %v", err))
+	}
+
+	// Gate 3: manifest parse + field validation.
+	m, err := tool.ParseManifestFromString(manifestYAML, string(scriptBytes), language)
+	if err != nil {
+		return fail(fmt.Sprintf("emit_tool: manifest invalid — fix and retry:\n%v", err))
+	}
+
+	// Gate 4: golden tests must be provided.
+	rawTests, _ := call.Input["golden_tests"].([]interface{})
+	if len(rawTests) < minGoldenTests {
+		return fail(fmt.Sprintf(
+			"emit_tool: at least %d golden_test(s) required — "+
+				"add {name, input, expected_diff} entries that cover the happy path "+
+				"before calling emit_tool",
+			minGoldenTests,
+		))
+	}
+
+	// Deserialise golden tests into typed structs.
+	var goldenCases []tool.GoldenCase
+	if b, _ := json.Marshal(rawTests); len(b) > 0 {
+		_ = json.Unmarshal(b, &goldenCases)
+	}
+
+	// Gate 5: run all golden tests server-side.
+	results := tool.RunGoldenTests(ctx, g.sandboxRunner, m, goldenCases)
+	if !tool.AllPassed(results) {
+		failures := strings.Join(tool.FailureMessages(results), "\n")
+		return fail(fmt.Sprintf(
+			"emit_tool: golden tests failed (%s) — fix the script and retry:\n%s",
+			tool.SummaryLine(results), failures,
+		))
 	}
 
 	guard.RecordSuccess()
-	g.log.InfoContext(ctx, "emit_tool accepted",
-		"manifest_bytes", len(manifestYAML),
-		"script_bytes", len(scriptBytes),
+	g.log.InfoContext(ctx, "emit_tool accepted — all gates passed",
+		"manifest_id", m.ID,
+		"golden_tests", len(goldenCases),
 		"verb", i.Action.Verb,
 	)
 
 	// Push to tools-registry and open a PR if configured.
 	if g.cfg.ToolsRegistryRepo != "" && g.bitbucket != nil {
-		if prURL, pushErr := g.pushToolPR(ctx, i, manifestYAML, string(scriptBytes), language); pushErr != nil {
+		prURL, pushErr := g.pushToolPR(ctx, i, manifestYAML, string(scriptBytes), language, goldenCases)
+		if pushErr != nil {
 			g.log.WarnContext(ctx, "tools-registry PR failed — tool accepted but not persisted",
 				"error", pushErr)
 		} else {
@@ -251,9 +298,16 @@ func (g *Generator) handleEmitTool(ctx context.Context, call llm.ToolCall, guard
 	return "emit_tool: accepted (no tools-registry configured)", true, nil
 }
 
-// pushToolPR pushes the manifest and script to a new branch in the
-// tools-registry repository and opens a pull-request for human review.
-func (g *Generator) pushToolPR(ctx context.Context, i *intent.Intent, manifestYAML, scriptContent, language string) (string, error) {
+// pushToolPR pushes the manifest, script, and golden tests to a new branch in
+// the tools-registry repository and opens a pull-request for human review.
+// The golden tests are committed alongside the manifest so reviewers can see
+// exactly what cases were validated before the PR was opened.
+func (g *Generator) pushToolPR(
+	ctx context.Context,
+	i *intent.Intent,
+	manifestYAML, scriptContent, language string,
+	goldenCases []tool.GoldenCase,
+) (string, error) {
 	toolDir := fmt.Sprintf("tools/%s/%s", normaliseRepoPath(i.Action.Target.Repo), i.Action.Verb)
 	ext := scriptExt(language)
 	branch := fmt.Sprintf("automation/new-tool/%s/%s", i.Action.Verb, i.Source.TicketID)
@@ -268,6 +322,13 @@ func (g *Generator) pushToolPR(ctx context.Context, i *intent.Intent, manifestYA
 		toolDir + "/script." + ext: scriptContent,
 	}
 
+	// Commit the golden tests so human reviewers can inspect and extend them.
+	if len(goldenCases) > 0 {
+		if b, err := json.MarshalIndent(goldenCases, "", "  "); err == nil {
+			files[toolDir+"/golden_tests.json"] = string(b)
+		}
+	}
+
 	if err := g.bitbucket.PushBranch(ctx, g.cfg.ToolsRegistryRepo, branch,
 		fmt.Sprintf("feat: add %s tool for %s [%s]", i.Action.Verb, i.Action.Target.Repo, i.Source.TicketID),
 		files,
@@ -278,7 +339,7 @@ func (g *Generator) pushToolPR(ctx context.Context, i *intent.Intent, manifestYA
 	pr, err := g.bitbucket.CreatePR(ctx, mcp.CreatePRRequest{
 		Repo:         g.cfg.ToolsRegistryRepo,
 		Title:        fmt.Sprintf("[%s] New tool: %s for %s", i.Source.TicketID, i.Action.Verb, i.Action.Target.Repo),
-		Description:  toolPRBody(i),
+		Description:  toolPRBody(i, len(goldenCases)),
 		SourceBranch: branch,
 		TargetBranch: targetBranch,
 	})
@@ -288,21 +349,25 @@ func (g *Generator) pushToolPR(ctx context.Context, i *intent.Intent, manifestYA
 	return pr.URL, nil
 }
 
-func toolPRBody(i *intent.Intent) string {
+func toolPRBody(i *intent.Intent, goldenCount int) string {
 	return fmt.Sprintf(`## New Automation Tool
 
 **Jira**: [%s](%s)
 **Verb**: %s
 **Target repo**: %s
+**Golden tests**: %d case(s) — all passed server-side before this PR was opened.
 
 This tool was generated automatically by OpsMate's slow-path generator.
-Review the manifest and script carefully before merging.
+Review the manifest, script, **and golden_tests.json** carefully before merging.
+The golden tests were validated in a sandbox against the committed script; extend
+them to cover edge cases before approving.
 
 Once merged, the indexer will pick up the new tool and future tickets
 triggering the same (%s, %s) pair will use it automatically.`,
 		i.Source.TicketID, i.Source.URL,
 		i.Action.Verb,
 		i.Action.Target.Repo,
+		goldenCount,
 		i.Action.Verb, i.Action.Target.Repo,
 	)
 }
@@ -469,7 +534,7 @@ func (g *Generator) sandboxDryRun(ctx context.Context, input map[string]interfac
 }
 
 func (g *Generator) sandboxGoldenTests(ctx context.Context, input map[string]interface{}) string {
-	lang := sandbox.Language(strInput(input, "language"))
+	lang := strInput(input, "language")
 	scriptB64 := strInput(input, "script_b64")
 	scriptBytes, err := base64.StdEncoding.DecodeString(scriptB64)
 	if err != nil {
@@ -477,37 +542,29 @@ func (g *Generator) sandboxGoldenTests(ctx context.Context, input map[string]int
 	}
 
 	rawTests, _ := input["golden_tests"].([]interface{})
-	pass, fail := 0, 0
-	var failures []string
-
-	for _, rawTest := range rawTests {
-		testMap, _ := rawTest.(map[string]interface{})
-		paramsJSON, _ := testMap["input_json"].(string)
-		expectedDiff, _ := testMap["expected_diff"].(string)
-		name, _ := testMap["name"].(string)
-
-		result, err := g.sandboxRunner.Run(ctx, sandbox.Spec{
-			Language:      lang,
-			ScriptContent: string(scriptBytes),
-			ParamsJSON:    paramsJSON,
-			TimeoutSeconds: 60,
-		})
-		if err != nil || result.ExitCode != 0 || normaliseWS(result.Stdout) != normaliseWS(expectedDiff) {
-			fail++
-			reason := fmt.Sprintf("test %q failed", name)
-			if err != nil {
-				reason += ": " + err.Error()
-			}
-			failures = append(failures, reason)
-		} else {
-			pass++
-		}
+	var cases []tool.GoldenCase
+	if b, _ := json.Marshal(rawTests); len(b) > 0 {
+		_ = json.Unmarshal(b, &cases)
 	}
 
+	m := &tool.Manifest{
+		Runtime:       tool.RuntimeConfig{Language: lang},
+		ScriptContent: string(scriptBytes),
+	}
+	results := tool.RunGoldenTests(ctx, g.sandboxRunner, m, cases)
+
 	out := map[string]interface{}{
-		"pass":     pass,
-		"fail":     fail,
-		"failures": failures,
+		"pass":     0,
+		"fail":     0,
+		"failures": []string{},
+	}
+	for _, r := range results {
+		if r.Passed {
+			out["pass"] = out["pass"].(int) + 1
+		} else {
+			out["fail"] = out["fail"].(int) + 1
+			out["failures"] = append(out["failures"].([]string), fmt.Sprintf("%s: %s", r.Name, r.Error))
+		}
 	}
 	b, _ := json.Marshal(out)
 	return string(b)
@@ -536,18 +593,48 @@ func (g *Generator) buildTools() []llm.Tool {
 		{Name: "registry_find_tools_with_verb", Description: "Find existing tools for a verb", InputSchema: objSchema("verb")},
 		{Name: "registry_read_tool", Description: "Read manifest and script for a tool", InputSchema: objSchema("tool_id")},
 		{Name: "sandbox_dry_run", Description: "Run script in sandbox; returns {ok,diff,stderr_tail}", InputSchema: objSchema("language", "script_b64", "params_json")},
-		{Name: "sandbox_run_golden_tests", Description: "Run golden tests; returns {pass,fail,failures}", InputSchema: objSchema("language", "script_b64", "golden_tests")},
 		{
-			Name:        "emit_tool",
-			Description: "Emit the final tool. Terminates the loop if valid.",
+			Name:        "sandbox_run_golden_tests",
+			Description: "Run golden tests against a script; returns {pass,fail,failures}. Each golden_test must have {name, input: object, expected_diff}.",
 			InputSchema: map[string]interface{}{
 				"type":     "object",
-				"required": []string{"language", "script_b64", "manifest_yaml"},
+				"required": []string{"language", "script_b64", "golden_tests"},
+				"properties": map[string]interface{}{
+					"language":   map[string]interface{}{"type": "string", "enum": []string{"python", "bash", "go"}},
+					"script_b64": map[string]interface{}{"type": "string"},
+					"golden_tests": map[string]interface{}{
+						"type":  "array",
+						"items": map[string]interface{}{"type": "object"},
+					},
+				},
+			},
+		},
+		{
+			Name: "emit_tool",
+			Description: "Emit the final tool. The server validates the manifest, " +
+				"runs all golden tests in a sandbox, and only accepts if every test passes. " +
+				"Provide at least one golden_test covering the happy path before calling this.",
+			InputSchema: map[string]interface{}{
+				"type":     "object",
+				"required": []string{"language", "script_b64", "manifest_yaml", "golden_tests"},
 				"properties": map[string]interface{}{
 					"language":     map[string]interface{}{"type": "string", "enum": []string{"python", "bash", "go"}},
-					"script_b64":   map[string]interface{}{"type": "string", "description": "base64-encoded script"},
-					"manifest_yaml": map[string]interface{}{"type": "string"},
-					"golden_tests": map[string]interface{}{"type": "array"},
+					"script_b64":   map[string]interface{}{"type": "string", "description": "base64-encoded script content"},
+					"manifest_yaml": map[string]interface{}{"type": "string", "description": "full manifest.yaml content"},
+					"golden_tests": map[string]interface{}{
+						"type":        "array",
+						"minItems":    1,
+						"description": "Test cases that were validated with sandbox_run_golden_tests before emit_tool",
+						"items": map[string]interface{}{
+							"type":     "object",
+							"required": []string{"name", "input", "expected_diff"},
+							"properties": map[string]interface{}{
+								"name":          map[string]interface{}{"type": "string"},
+								"input":         map[string]interface{}{"type": "object", "description": "parameters passed to the script via PARAMS_PATH"},
+								"expected_diff": map[string]interface{}{"type": "string", "description": "exact unified diff the script should produce"},
+							},
+						},
+					},
 				},
 			},
 		},

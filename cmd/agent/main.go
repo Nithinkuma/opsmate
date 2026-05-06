@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -180,6 +181,7 @@ func runServer(cfgFile string) error {
 		r.Get("/tools", s.handleListTools)
 		r.Get("/tools/{toolID}", s.handleGetTool)
 		r.Post("/tools/{toolID}/promote", s.handlePromoteTool)
+		r.Post("/tools/validate", s.handleValidateTool)
 
 		// Intents & executions (read-only, DB required)
 		r.Get("/intents/{id}", s.handleGetIntent)
@@ -347,6 +349,56 @@ func (s *srv) handleGetTool(w http.ResponseWriter, r *http.Request) {
 		"language":     entry.Manifest.Runtime.Language,
 		"policy_state": string(entry.PolicyState),
 		"hash":         entry.Manifest.Hash,
+	})
+}
+
+// ── POST /api/v1/tools/validate ──────────────────────────────────────────────
+// Stateless endpoint: parse a manifest + run golden tests without touching the
+// registry or DB. Useful from CI pipelines validating a tools-registry PR.
+
+func (s *srv) handleValidateTool(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		ManifestYAML string           `json:"manifest_yaml"`
+		ScriptB64    string           `json:"script_b64"`
+		Language     string           `json:"language"`
+		GoldenTests  []tool.GoldenCase `json:"golden_tests"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	if body.ManifestYAML == "" || body.ScriptB64 == "" {
+		writeError(w, http.StatusBadRequest, "manifest_yaml and script_b64 are required")
+		return
+	}
+
+	scriptBytes, err := base64.StdEncoding.DecodeString(body.ScriptB64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "script_b64: invalid base64")
+		return
+	}
+
+	lang := body.Language
+	if lang == "" {
+		lang = "python"
+	}
+
+	m, parseErr := tool.ParseManifestFromString(body.ManifestYAML, string(scriptBytes), lang)
+	if parseErr != nil {
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]interface{}{
+			"valid":           false,
+			"manifest_errors": []string{parseErr.Error()},
+			"test_results":    nil,
+		})
+		return
+	}
+
+	results := tool.RunGoldenTests(r.Context(), sandbox.NewLocalRunner(s.log), m, body.GoldenTests)
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"valid":           tool.AllPassed(results),
+		"summary":         tool.SummaryLine(results),
+		"manifest_errors": nil,
+		"test_results":    results,
 	})
 }
 

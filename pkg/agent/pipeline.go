@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 
@@ -44,11 +45,14 @@ type PipelineResult struct {
 	ToolGenerated       bool
 }
 
-// Pipeline wires the five stages: extract → resolve → (generate | execute → raise PR).
+// Pipeline wires all stages:
+//   extract → gate → resolve → health-check → (generate | execute → raise PR).
 type Pipeline struct {
 	deps        PipelineDeps
 	intentAgent *IntentAgent
+	intentGate  *IntentGate
 	resolver    *Resolver
+	toolHealth  *ToolHealthChecker
 	executor    *Executor
 	prRaiser    *PRRaiser
 	generator   *Generator
@@ -75,7 +79,9 @@ func NewPipeline(d PipelineDeps) *Pipeline {
 	return &Pipeline{
 		deps:        d,
 		intentAgent: NewIntentAgent(primaryLLM, d.Atlassian, d.VerbReg, d.DB, d.ComponentMap, d.PrimaryModel, d.Log),
+		intentGate:  NewIntentGate(d.VerbReg),
 		resolver:    NewResolver(d.ToolReg),
+		toolHealth:  NewToolHealthChecker(d.Runner),
 		executor:    NewExecutor(d.Runner, d.DB, d.ToolReg, sandboxKind, d.Log),
 		prRaiser:    NewPRRaiser(d.Bitbucket, d.Atlassian, d.DB, d.Log),
 		generator:   NewGenerator(primaryLLM, fastLLM, d.Bitbucket, d.ToolReg, d.Runner, d.GeneratorCfg, d.Log),
@@ -102,6 +108,18 @@ func (p *Pipeline) Run(ctx context.Context, ticketID string) (*PipelineResult, e
 	result := &PipelineResult{Intent: i}
 	ctx = observability.WithIntentID(ctx, i.IntentID)
 
+	// Stage 1.5: intent gate — validate completeness and semantic correctness
+	// before any compute-heavy stage begins.
+	if err := p.intentGate.Check(ctx, i); err != nil {
+		var gateErr *GateError
+		if errors.As(err, &gateErr) {
+			// Surface as clarification needed so the caller can relay the
+			// specific failures back to the ticket reporter.
+			return &PipelineResult{ClarificationNeeded: err.Error()}, nil
+		}
+		return nil, fmt.Errorf("pipeline[%s] intent gate: %w", ticketID, err)
+	}
+
 	// Stage 2: resolve tool
 	resolved := p.resolver.Resolve(i)
 	result.ResolveStatus = resolved.Status
@@ -117,6 +135,12 @@ func (p *Pipeline) Run(ctx context.Context, ticketID string) (*PipelineResult, e
 		result.ToolGenerated = true
 		_ = toolPR
 		return result, nil
+	}
+
+	// Stage 2.5: tool health check — run golden tests before executing on real
+	// data to catch regressions introduced after the tool was merged.
+	if err := p.toolHealth.Check(ctx, resolved.Entry); err != nil {
+		return nil, fmt.Errorf("pipeline[%s] tool health: %w", ticketID, err)
 	}
 
 	// Fast path: execute existing tool in sandbox

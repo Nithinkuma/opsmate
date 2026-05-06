@@ -136,6 +136,26 @@ func (m *Manifest) ComputeHashes() {
 	}
 }
 
+// ParseManifestFromString parses a manifest from raw YAML + script content
+// without requiring files on disk. Used by the generator to validate a
+// generated tool before pushing it to the tools-registry.
+func ParseManifestFromString(yamlContent, scriptContent, language string) (*Manifest, error) {
+	var m Manifest
+	if err := yaml.UnmarshalWithOptions([]byte(yamlContent), &m, yaml.Strict()); err != nil {
+		return nil, fmt.Errorf("tool: parse manifest YAML: %w", err)
+	}
+	m.ScriptContent = scriptContent
+	// The explicit language parameter overrides whatever the LLM put in the YAML,
+	// since emit_tool carries it as a top-level field.
+	if language != "" {
+		m.Runtime.Language = language
+	}
+	if err := m.validate(); err != nil {
+		return nil, fmt.Errorf("tool: invalid manifest: %w", err)
+	}
+	return &m, nil
+}
+
 func hexHash(data []byte) string {
 	h := sha256.Sum256(data)
 	return fmt.Sprintf("%x", h)
